@@ -1,0 +1,62 @@
+# Sign Language to Speech Translator — central configuration
+
+project:
+  name: "Sign Language to Speech Translator"
+  sign_language: "ISL"   # Indian Sign Language
+
+paths:
+  raw_dir: "data/raw"              # videos organised as data/raw/<label>/*.mp4
+  landmarks_dir: "data/landmarks"  # extracted .npy sequences
+  processed_dir: "data/processed"  # train/val/test .npz + labels.json
+  checkpoint_dir: "checkpoints"
+  reports_dir: "reports"
+
+data:
+  sequence_length: 30     # frames per sample
+  num_hands: 2
+  landmarks_per_hand: 21
+  coords: 3               # x, y, z  -> 126 features per frame
+  val_split: 0.15
+  test_split: 0.15
+  random_seed: 42
+
+model:
+  type: "transformer"            # "lstm" or "transformer"
+  hidden_size: 128
+  num_layers: 2
+  dropout: 0.3
+
+training:
+  batch_size: 32
+  epochs: 60
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  early_stopping_patience: 10
+
+realtime:
+  buffer_size: 30
+  predict_every_n_frames: 5
+  smoothing_window: 7
+  confidence_threshold: 0.60
+  cooldown_seconds: 1.5
+
+# Real-data vocabulary — 17 INCLUDE signs (Greetings + Pronouns).
+# Folder names under data/raw/ must match these exactly.
+labels:
+  - "hello"
+  - "thank you"
+  - "good morning"
+  - "good afternoon"
+  - "good evening"
+  - "good night"
+  - "how are you"
+  - "alright"
+  - "pleased"
+  - "i"
+  - "you"
+  - "you all"
+  - "he"
+  - "she"
+  - "we"
+  - "they"
+  - "it"

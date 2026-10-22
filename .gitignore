@@ -1,0 +1,31 @@
+# Release .gitignore — ISL Translator (Code for a Billion open-source release)
+
+# --- never publish: raw videos, downloads, regenerable/generated data ---
+data/raw/
+data/raw_dl/
+data/_synth_backup/
+data/analytics/
+data/processed/
+
+# NOTE: data/landmarks/ (extracted .npy sequences, ~6 MB) IS tracked —
+# it lets anyone retrain without downloading 15 GB of video.
+
+# --- python ---
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# --- local logs ---
+logs/
+*.log
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- media (docs may reference sample clips; keep them out) ---
+*.mp4
+*.mov
+*.avi
