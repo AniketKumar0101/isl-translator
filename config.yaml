@@ -37,7 +37,10 @@ realtime:
   buffer_size: 30
   predict_every_n_frames: 5
   smoothing_window: 7
-  confidence_threshold: 0.60
+  # Below this confidence predict()/step() return label=None ("unsure")
+  # instead of a shaky guess. Tuned 2026-10-22: correct preds avg 0.66 conf,
+  # wrong preds avg 0.45; at 0.55 the shown predictions are ~90%+ accurate.
+  min_confidence: 0.55
   cooldown_seconds: 1.5
 
 # Real-data vocabulary — 17 INCLUDE signs (Greetings + Pronouns).

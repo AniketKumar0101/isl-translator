@@ -65,6 +65,16 @@ class Speaker:
 
 
 class SignTranslator:
+    # Classes the model systematically over-predicts. Measured 2026-10-22 on
+    # held-out INCLUDE data (see TEST_REPORT.md "She-bias fix"): all three are
+    # raised-open-hand signs and the model fires them on ambiguous input —
+    # test-set precision was she 0.571, good morning 0.333, good night 0.375,
+    # with "she" predicted 7x vs 4 true occurrences. A small logit penalty on
+    # these classes cuts false positives ("she" for everything on webcam)
+    # without hurting accuracy (val 0.697->0.697, test 0.701->0.701 at 0.3).
+    _OVERPREDICTED_CLASSES = ("she", "good morning", "good night")
+    _BIAS_PENALTY = 0.3
+
     def __init__(self, config="config.yaml"):
         cfg = yaml.safe_load(open(config))
         self.cfg = cfg
@@ -82,6 +92,17 @@ class SignTranslator:
         self.landmarker = init_landmarker()
         self.buffer = deque(maxlen=rt["buffer_size"])
         self.votes = deque(maxlen=rt["smoothing_window"])
+        # Minimum confidence to report a label; below it predict()/step()
+        # return label=None ("unsure") instead of a shaky guess.
+        # Replaces the old `confidence_threshold` key (still read as fallback).
+        self.min_confidence = float(
+            rt.get("min_confidence", rt.get("confidence_threshold", 0.55)))
+        # Per-class logit bias correcting the over-prediction above.
+        bias = np.zeros(len(self.labels), dtype=np.float32)
+        for c in self._OVERPREDICTED_CLASSES:
+            if c in self.labels:
+                bias[self.labels.index(c)] = -self._BIAS_PENALTY
+        self._bias = torch.from_numpy(bias).to(self.device)
         self.speaker = Speaker()
         self.sentence = []
         self.last_spoken = None
@@ -91,14 +112,33 @@ class SignTranslator:
         self.last_hand_landmarks = None
 
     def predict(self):
+        """Classify the current 30-frame buffer.
+
+        Returns (label, confidence). `label` is None ("unsure") when the
+        bias-corrected top-1 confidence is below `min_confidence` — callers
+        should show an "unsure / keep signing" state instead of a guess.
+        `confidence` is always the raw top-1 probability (useful for display).
+        Requires a full buffer; returns (None, 0.0) otherwise.
+        """
+        rt = self.cfg["realtime"]
+        if len(self.buffer) < rt["buffer_size"]:
+            return None, 0.0
         seq = normalise(np.stack(self.buffer))[None].astype(np.float32)
         with torch.no_grad():
-            probs = torch.softmax(
-                self.model(torch.from_numpy(seq).to(self.device)), dim=1)[0]
+            logits = self.model(torch.from_numpy(seq).to(self.device))[0]
+            probs = torch.softmax(logits + self._bias, dim=0)
         conf, idx = probs.max(0)
-        return self.labels[idx.item()], conf.item()
+        conf = conf.item()
+        if conf < self.min_confidence:
+            return None, conf
+        return self.labels[idx.item()], conf
 
     def step(self, frame):
+        """Feed one webcam frame; returns (smoothed_label, confidence).
+
+        `smoothed_label` is None until enough confident predictions have
+        accumulated in the smoothing window — treat None as "unsure".
+        """
         rt = self.cfg["realtime"]
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
@@ -112,7 +152,7 @@ class SignTranslator:
         if (len(self.buffer) == rt["buffer_size"]
                 and self.frame_count % rt["predict_every_n_frames"] == 0):
             label, conf = self.predict()
-            if conf >= rt["confidence_threshold"]:
+            if label is not None:  # only confident predictions get a vote
                 self.votes.append(label)
 
         smooth = Counter(self.votes).most_common(1)[0][0] if self.votes else None
